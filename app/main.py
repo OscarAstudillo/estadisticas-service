@@ -163,13 +163,16 @@ def livez():
 
 @app.get("/readyz", status_code=status.HTTP_200_OK)
 def readyz():
-    """Readiness: verifica conexión a BD y uso de recursos."""
-    # Aquí deberías agregar la lógica real de ping a PostgreSQL
-    # Además, validamos que la memoria no esté saturada
-    memoria = psutil.virtual_memory().percent
-    if memoria > READY_MAX_MEM_PERCENT:
+    """Readiness: verifica conexión a BD."""
+    try:
+        # Intentamos hacer un ping rápido a la BD
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+    except Exception as e:
+        # Si la BD no responde, el pod no está listo
         raise HTTPException(
             status_code=503,
-            detail={"ready": False, "memoria_%": memoria}
+            detail={"ready": False, "error_db": str(e)}
         )
-    return {"ready": True, "memoria_%": memoria}
+    return {"ready": True}
