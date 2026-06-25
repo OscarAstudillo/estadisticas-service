@@ -1,6 +1,5 @@
 name: Deploy to EKS
 
-# El pipeline se gatilla SOLO cuando haces push a la rama 'deploy'
 on:
   push:
     branches: [ deploy ]
@@ -8,7 +7,7 @@ on:
 env:
   AWS_REGION: us-east-1
   CLUSTER_NAME: vidalcasino-eks
-  ECR_REPO: estadisticas-service # ¡CAMBIA ESTO EN CADA REPOSITORIO! (ej. apuestas-service, casino-frontend)
+  ECR_REPO: estadisticas-service 
 
 jobs:
   deploy:
@@ -17,7 +16,7 @@ jobs:
     - name: Clonar el codigo
       uses: actions/checkout@v4
 
-    - name: Configurar credenciales AWS (Desde tus GitHub Secrets)
+    - name: Configurar credenciales AWS
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -32,25 +31,26 @@ jobs:
     - name: Construir y subir imagen Docker a ECR
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }} # Usa el ID del commit como version
+        IMAGE_TAG: ${{ github.sha }}
       run: |
-        docker build -t $REGISTRY/$ECR_REPO:$IMAGE_TAG -t $REGISTRY/$ECR_REPO:latest .
+        docker build -t $REGISTRY/$ECR_REPO:$IMAGE_TAG -t $REGISTRY/$ECR_REPO:latest -t $REGISTRY/$ECR_REPO:v1.0.0 .
         docker push $REGISTRY/$ECR_REPO:$IMAGE_TAG
         docker push $REGISTRY/$ECR_REPO:latest
+        docker push $REGISTRY/$ECR_REPO:v1.0.0
 
     - name: Conectar kubectl al cluster EKS
-      run: aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+      run: aws eks update-kubeconfig --name ${{ env.CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
     - name: Reemplazar variables y Desplegar en EKS
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         IMAGE_TAG: ${{ github.sha }}
       run: |
-        # Obtener el Account ID de AWS dinámicamente
+        # Obtiene el ID dinámicamente para que nunca falle aunque cambie tu cuenta
         ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
         
-        # Este comando busca los textos genéricos en tu deployment.yaml y los cambia por tu URL real de AWS y la versión exacta de la imagen
-        sed -i "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; s|<REGION>|$AWS_REGION|g; s|:latest|:$IMAGE_TAG|g" k8s/deployment.yaml
+        # Inyecta el Account ID y el Tag exacto en tu deployment.yaml
+        sed -i "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; s|<REGION>|${{ env.AWS_REGION }}|g; s|:latest|:$IMAGE_TAG|g" k8s/deployment.yaml
         
         # Aplica los archivos en K8s
         kubectl apply -f k8s/deployment.yaml
