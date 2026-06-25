@@ -9,13 +9,22 @@ los expone para el dashboard del frontend. Comparte BD y JWT con casino-backend.
 Prefijo de rutas: /api/estadisticas
 """
 import os
+import time
+import psutil
+import os
+from fastapi import status
+
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import usuario_actual
 from .db import conexion, dict_cursor, esperar_bd
+
+app = FastAPI()
+INICIO = time.time()
+READY_MAX_MEM_PERCENT = float(os.getenv("READY_MAX_MEM_PERCENT", "90"))
 
 
 @asynccontextmanager
@@ -145,3 +154,22 @@ def estadisticas_globales(usuario: dict = Depends(usuario_actual)):
         "top_jugadores": top,
         "apuestas": {**ap, "win_rate": win_rate},
     }
+
+
+@app.get("/livez", status_code=status.HTTP_200_OK)
+def livez():
+    """Liveness: el proceso está vivo."""
+    return {"alive": True, "uptime_segundos": round(time.time() - INICIO, 1)}
+
+@app.get("/readyz", status_code=status.HTTP_200_OK)
+def readyz():
+    """Readiness: verifica conexión a BD y uso de recursos."""
+    # Aquí deberías agregar la lógica real de ping a PostgreSQL
+    # Además, validamos que la memoria no esté saturada
+    memoria = psutil.virtual_memory().percent
+    if memoria > READY_MAX_MEM_PERCENT:
+        raise HTTPException(
+            status_code=503,
+            detail={"ready": False, "memoria_%": memoria}
+        )
+    return {"ready": True, "memoria_%": memoria}

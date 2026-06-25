@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: estadisticas-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: estadisticas-service
+  template:
+    metadata:
+      labels:
+        app: estadisticas-service
+    spec:
+      # Regla para forzar el reparto de pods entre nodos (requisito del lab 3.3)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: estadisticas-service
+      containers:
+      - name: estadisticas-service
+        # Los marcadores <ACCOUNT_ID> y <REGION> serán reemplazados automáticamente por GitHub Actions
+        image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/estadisticas-service:latest
+        ports:
+        - containerPort: 8006
+        env:
+        - name: DB_HOST
+          value: "postgres-service" # Nombre interno de tu Base de Datos en K8s
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: casino-secrets # Llama a la caja fuerte que creamos en el paso 4.1
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: casino-secrets
+              key: DB_PASSWORD
+        resources:
+          requests:
+            cpu: "50m" # Obligatorio para que el HPA pueda calcular el % de uso
+          limits:
+            cpu: "250m"
+        livenessProbe: # Reinicia el contenedor si se bloquea
+          httpGet:
+            path: /livez
+            port: 8006
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe: # Saca el contenedor del balanceo si pierde conexión a BD
+          httpGet:
+            path: /readyz
+            port: 8006
+          initialDelaySeconds: 5
+          periodSeconds: 10

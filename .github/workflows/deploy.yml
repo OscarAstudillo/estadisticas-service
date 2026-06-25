@@ -1,0 +1,57 @@
+name: Deploy to EKS
+
+# El pipeline se gatilla SOLO cuando haces push a la rama 'deploy'
+on:
+  push:
+    branches: [ deploy ]
+
+env:
+  AWS_REGION: us-east-1
+  CLUSTER_NAME: vidalcasino-eks
+  ECR_REPO: estadisticas-service # ¡CAMBIA ESTO EN CADA REPOSITORIO! (ej. apuestas-service, casino-frontend)
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clonar el codigo
+      uses: actions/checkout@v4
+
+    - name: Configurar credenciales AWS (Desde tus GitHub Secrets)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login en Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Construir y subir imagen Docker a ECR
+      env:
+        REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }} # Usa el ID del commit como version
+      run: |
+        docker build -t $REGISTRY/$ECR_REPO:$IMAGE_TAG -t $REGISTRY/$ECR_REPO:latest .
+        docker push $REGISTRY/$ECR_REPO:$IMAGE_TAG
+        docker push $REGISTRY/$ECR_REPO:latest
+
+    - name: Conectar kubectl al cluster EKS
+      run: aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_REGION
+
+    - name: Reemplazar variables y Desplegar en EKS
+      env:
+        REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Obtener el Account ID de AWS dinámicamente
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        
+        # Este comando busca los textos genéricos en tu deployment.yaml y los cambia por tu URL real de AWS y la versión exacta de la imagen
+        sed -i "s|<ACCOUNT_ID>|$ACCOUNT_ID|g; s|<REGION>|$AWS_REGION|g; s|:latest|:$IMAGE_TAG|g" k8s/deployment.yaml
+        
+        # Aplica los archivos en K8s
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml
