@@ -55,3 +55,4 @@ jobs:
         # Aplica los archivos en K8s
         kubectl apply -f k8s/deployment.yaml
         kubectl apply -f k8s/service.yaml
+        kubectl apply -f k8s/hpa.yaml
