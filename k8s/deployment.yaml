@@ -29,6 +29,8 @@ spec:
         env:
         - name: DB_HOST
           value: "postgres-service" # Nombre interno de tu Base de Datos en K8s
+        - name: DB_NAME
+          value: "casino_db"        # <--- AQUI ESTA LA VARIABLE NUEVA Y SEPARADA
         - name: DB_USER
           valueFrom:
             secretKeyRef:
